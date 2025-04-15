@@ -1,0 +1,44 @@
+From 09574b9483450b10b302067685545b80995e2d48 Mon Sep 17 00:00:00 2001
+From: 130e <fernival328@gmail.com>
+Date: Tue, 15 Apr 2025 18:21:34 +0000
+Subject: [PATCH 4/4] part4 fix
+
+---
+ test.c | 7 ++++---
+ usys.S | 1 +
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/test.c b/test.c
+index 3b4ed8b..a323283 100644
+--- a/test.c
++++ b/test.c
+@@ -4,11 +4,12 @@
+ 
+ int main(int argc, char *argv[])
+ {
+-  if (fork() == 0) {
++  int pid = fork();
++  if (pid == 0) {
+     exit(3);
+   }
+   int status;
+-  wait(&status);
++  waitpid(pid, &status, 0);
+   printf(1, "status : %d\n", status);
+   exit(0);
+- }
+\ No newline at end of file
++}
+\ No newline at end of file
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..024b71a 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,4 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(waitpid)
+-- 
+2.49.0
+

@@ -1,0 +1,166 @@
+From 21bc3464a81f828cdc9079d492fe806268400419 Mon Sep 17 00:00:00 2001
+From: 130e <fernival328@gmail.com>
+Date: Tue, 15 Apr 2025 17:13:42 +0000
+Subject: [PATCH 3/4] part4
+
+---
+ defs.h    |  1 +
+ ln.c      |  4 +++-
+ proc.c    | 45 +++++++++++++++++++++++++++++++++++++++++++++
+ syscall.c |  2 ++
+ syscall.h |  1 +
+ sysproc.c | 13 +++++++++++++
+ user.h    |  1 +
+ 7 files changed, 66 insertions(+), 1 deletion(-)
+
+diff --git a/defs.h b/defs.h
+index 825c692..6e23fc4 100644
+--- a/defs.h
++++ b/defs.h
+@@ -120,6 +120,7 @@ void            userinit(void);
+ int             wait(int*);
+ void            wakeup(void*);
+ void            yield(void);
++int             waitpid(int, int*, int);
+ 
+ // swtch.S
+ void            swtch(struct context**, struct context*);
+diff --git a/ln.c b/ln.c
+index fb17c3b..171882d 100644
+--- a/ln.c
++++ b/ln.c
+@@ -9,7 +9,9 @@ main(int argc, char *argv[])
+     printf(2, "Usage: ln old new\n");
+     exit(1);
+   }
+-  if(link(argv[1], argv[2]) < 0)
++  if(link(argv[1], argv[2]) < 0) {
+     printf(2, "link %s %s: failed\n", argv[1], argv[2]);
++    exit(1);
++  }
+   exit(0);
+ }
+diff --git a/proc.c b/proc.c
+index facf794..25eafe5 100644
+--- a/proc.c
++++ b/proc.c
+@@ -315,6 +315,51 @@ wait(int *status)
+   }
+ }
+ 
++// Wait for a process with matching pid to exit and return the pid.
++// Return -1 if cannot find the process with matching pid.
++int
++waitpid(int pid, int* status, int options)
++{
++  struct proc *p;
++  int found;
++  struct proc *curproc = myproc();
++  
++  acquire(&ptable.lock);
++  for(;;){
++    // Scan through table looking for exited children.
++    found = 0;
++    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
++      if(p->pid != pid)
++        continue;
++      found = 1;
++      if(p->state == ZOMBIE){
++        // Found one.
++        if (status)
++          *status = p->status;
++        kfree(p->kstack);
++        p->kstack = 0;
++        freevm(p->pgdir);
++        p->pid = 0;
++        p->parent = 0;
++        p->name[0] = 0;
++        p->killed = 0;
++        p->state = UNUSED;
++        release(&ptable.lock);
++        return pid;
++      }
++    }
++
++    // No point waiting if we cannot find pid.
++    if(!found || curproc->killed){
++      release(&ptable.lock);
++      return -1;
++    }
++
++    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
++    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
++  }
++}
++
+ //PAGEBREAK: 42
+ // Per-CPU process scheduler.
+ // Each CPU calls scheduler() after setting itself up.
+diff --git a/syscall.c b/syscall.c
+index ee85261..89c01e1 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -103,6 +103,7 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_waitpid(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +127,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_waitpid] sys_waitpid,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..2a97484 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_waitpid  22
+diff --git a/sysproc.c b/sysproc.c
+index 17fc8d8..f3a958f 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -33,6 +33,19 @@ sys_wait(void)
+   return wait(status);
+ }
+ 
++int
++sys_waitpid(void)
++{
++  int pid, *status, options;
++  if (argint(0, &pid) < 0)
++    return -1;
++  if (argptr(1, (char**)&status, sizeof(int)) < 0)
++    return -1;
++  if (argint(2, &options) < 0)
++    return -1;
++  return waitpid(pid, status, options);
++}
++
+ int
+ sys_kill(void)
+ {
+diff --git a/user.h b/user.h
+index e9a0a26..a502d88 100644
+--- a/user.h
++++ b/user.h
+@@ -23,6 +23,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int waitpid(int, int*, int);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+-- 
+2.49.0
+
